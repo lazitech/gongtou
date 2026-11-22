@@ -1,0 +1,72 @@
+---
+name: gongtou
+description: Use before implementing substantial changes in any Git repository, including a new checkout. Dispatch even a single feature that needs its own tests, a cross-module change, a refactor, or a bug fix that needs diagnosis. Use for explicit Codex requests, card follow-ups, project setup (“帮我配置”), merging approved cards, integration review and deployment. Claude handles small local edits, read-only questions, and “do it yourself” (“你自己做”) requests directly.
+---
+
+## Route the request
+
+For approved cards awaiting merge, integration review or deployment, go directly to **Integration and deployment**. For “帮我配置” or a request to configure this workflow, go straight to registration and guided setup below, even without a coding task. For coding requests, estimate the requested change before editing. Answer read-only questions directly. Outside a Git worktree, handle the work directly or explain why it needs a checkout. For implementation in a worktree, “use Codex”, “write a card” and `/gongtou` select this flow regardless of size. “Do it yourself” selects Claude.
+
+- **Small.** Claude implements and verifies a localized change directly when the fix is clear, takes minutes, and adds no module or interface. Roughly 50 changed lines or fewer in one file or a few closely related spots is typical. Examples include correcting a typo, adjusting a setting, or fixing a known error in a function.
+- **Large.** Dispatch before implementation when the work crosses modules or interfaces, introduces a feature needing its own tests, requires diagnosis or a substantial refactor, is likely to exceed about 100 changed lines, runs for a long time, or splits into independent parts. A single feature can warrant one card even when the user never mentions parallel work.
+- **In between.** Use judgment about effort and verification. Favor cards when independent parts can run in parallel.
+
+Claude owns the plan, dependencies, integration and report. Codex implements each card in a separate worktree.
+
+## Registration and guided setup
+
+Once the request routes to Codex, run `codex-flow-lite status` in the checkout. If `initialized` is true, use its configured base. If false, register automatically and continue:
+- Prefer the current branch’s upstream from `git rev-parse --symbolic-full-name '@{upstream}'`. Otherwise try `git symbolic-ref -q refs/remotes/origin/HEAD`. Use the first named ref that resolves locally to a commit.
+- If there are no remotes, use the local default branch. Check the local branch named by `git config --get init.defaultBranch`, then the usual existing `main` or `master`. A sole local branch is unambiguous. If neither remote nor local evidence identifies a base (including an empty repository), report what is missing instead of guessing a release target.
+- Run `codex-flow-lite init --base "$ref"` with the selected full ref. This registers for review only (empty sites). Report the returned `config`, `rules`, `state` and `drafts` paths to the user on one line. If another session registered first, reread status and use its configured base.
+- For both new and existing projects, resolve the configured ref once with `git rev-parse --verify "${ref}^{commit}"`. Use that exact OID for independent cards in the same batch.
+- Immediately after first registration, or whenever the user requests setup, complete the setup below before dispatch. On a setup-only request, finish after reporting the configuration.
+
+Read the external TOML named by `status.project_config`. Preserve existing settings and sites. Infer from project files and CI first, asking only about missing facts or choices.
+
+1. Identify the project's actual test target from CI, manifests and test files (pytest, unittest, npm/pnpm test, cargo test, go test or a Makefile target). Inspect what the command executes. For Python, identify the active project interpreter from .venv, venv, uv or Poetry and verify its executable path. Keep the absolute venv executable path, including its venv directory. A new card worktree omits untracked environments. Use the quoted absolute interpreter in the test command and relative paths for project sources so tests exercise the card checkout. For non-Python projects omit an inapplicable interpreter.
+2. Run the proposed fast CPU-only, unpaid tests once locally from the checkout. Record the exact command, exit code, elapsed time and what tests actually ran. If the command looks slow, requires GPU or paid services, or cannot be inferred, ask for a suitable target before running it. If it fails, runs zero expected tests or exceeds a short trial, report the evidence and ask about an alternative. Save a verified command only after a successful run.
+3. Edit a sibling copy of the external project TOML, setting `card_tests` and, when applicable, `interpreter`. Run `codex-flow-lite validate-config "$candidate"` from the checkout. Show any diagnostic and correct the candidate before replacing the active file atomically. Preserve its permissions and any intervening user edits. Verify the installed settings with `codex-flow-lite validate-config`.
+4. When the local setup is clear, the only routine question is “Do you want to deploy to a server?” Honor an answer already given. For local review only, keep `sites = []`. If the user requests deployment now or later, follow **Configure a deployment site** below. Finish with one paragraph giving the verified command and elapsed time, interpreter if applicable, deployment choice and absolute config path.
+
+## Dispatch cards
+
+1. Write every task card and follow-up under the absolute `drafts` directory (create it if missing on an older project) returned by `init` or `status`. Keep the integration checkout clean for `codex-flow-lite ship`. Give each card a unique ID, concrete outcome, owned files, dependencies and a local verification command or observable acceptance result. A card might read:
+
+   ```markdown
+   ---
+   id: empty-input
+   effort: medium
+   ---
+   Handle an empty input in the import command. Preserve existing nonempty input
+   behavior. Exercise both cases with the importer tests and report the results.
+   ```
+
+2. Prefer `sol` with its default `medium` effort for well-scoped features and fixes. Use `low` for mechanical edits. Choose `astra` with its default `high` for a difficult diagnosis or changes spanning several interfaces. Raise effort when the task warrants the latency. Split independent changes into separate cards; dispatch dependent work after its prerequisite commit is available.
+3. Start one Bash tool call per independent card with `run_in_background: true`, and submit these calls together. For example, run `codex-flow-lite task sol "$drafts/empty-input.md" --base "$base"` and a separate `codex-flow-lite task astra "$drafts/export.md" --base "$base"`. Keep the background task IDs. Use background task completion notifications to collect **each** exit status. Work on other independent items in the meantime.
+
+## Acceptance and triage
+
+1. Run `codex-flow-lite status <id>` for each completion. Worker `done` records its edits. Read the separate `card_review` status, exact base/head, findings, test commands and results. A no_changes result (exit 0) has no card commit to merge. When configured tests fail (exit 5), use the test log to prepare worker feedback; Sol starts after the tests pass. A card is ready to merge only when Sol and its tests both passed at the recorded tip. For partial or blocked workers, inspect the blocker and resume their original thread with actionable feedback. GPU runs and paid project jobs need approval for each occurrence.
+2. Claude triages every card finding before asking for edits. Check the cited code, a reproducer or the applicable contract. Record each finding ID with its disposition and evidence under `drafts`, then run `codex-flow-lite resume <id> "$drafts/<id>-feedback.md"`. Ask the original worker to fix confirmed problems only. For a false positive, explain the evidence and ask the worker to leave correct code alone. Sol reassesses the resulting tip and tests. A changed descendant can reuse the original Sol thread once. If the tip is identical, Sol can reconsider in a fresh full review. On another failure, report the outstanding evidence to Claude for a decision.
+3. Collect all approved tips and follow **Integration and deployment** below. Report the exact commits, card test outcomes and any pending work.
+
+## Integration and deployment
+
+Use the installed Lite launcher, `codex-flow-lite` (or the draft's absolute `codex-flow` path).
+
+If the user requests deployment and the external project TOML has empty sites, complete **Configure a deployment site** before running `codex-flow-lite ship`. A setup-only request ends after configuration.
+
+1. Run `codex-flow-lite status <id>` for each selected card. Match its current branch tip to the passing card review and test evidence. Finish outstanding card triage before starting the merge. Record the original release base OID.
+2. Claude merges the approved tips on a clean integration branch. Resolve conflicts directly in the integration checkout, inspect both parents, stage the resolution and commit it. Run local tests for the combined change, especially across card boundaries. A conflict requiring a substantial redesign may justify a separate implementation card at Claude's discretion.
+3. Run `codex-flow-lite ship --base <original-oid>`. Read the reported coverage. Sol checks cross-card behavior, merge resolutions and Claude's own changes. Content without verified passing card evidence receives full review. A passing verdict starts the configured deployment.
+4. If the integration verdict is `needs_changes`, Claude investigates and fixes the confirmed findings in the integration checkout, tests and commits the repair. Run `codex-flow-lite ship --base <original-oid> --after-review <integration-report>` once. Use the integration report from step 3. If the follow-up still finds issues, stop and report them. For an all-false-positive assessment with no new candidate, present the evidence and current verdict to the user.
+5. Summarize approved card tips, tests, integration resolutions, Sol's final verdict, deployed OID and results by site. Report failed or unverified checks and the worktree or deployment record needed for follow-up. GPU and paid project jobs require separate user approval.
+
+## Configure a deployment site
+
+1. Read only literal Host aliases from Host directives in `~/.ssh/config`. Follow OpenSSH `Include` directives (including nested files and glob matches), collecting only literal Host names. Use the expanded absolute path to the top-level `~/.ssh/config` for the site’s `ssh_config` field, including when the selected alias comes from an included file. List the aliases for selection, skipping wildcard and negated patterns. Keep private keys and other config values out of the conversation. If there is no matching alias, ask for the target. Confirm the intended host and checkout path, suggesting a location based on the local repo name.
+2. Use read-only SSH inspection on that host. Quote the path as data. Verify the checkout exists, its absolute root, symbolic branch, HEAD OID versus the local deployment base, and cleanliness including untracked files. Use Git with `--no-optional-locks -c core.fsmonitor=false` for status. Inspect origin's push destination and report only its host and repository path, redacting credentials and query strings before output. Report mismatches so the user can identify the correct target. Leave the server untouched throughout setup.
+3. Infer the server test command from remote manifests, CI and available executables. Check any interpreter path on the server itself. Record only CPU-only, unpaid commands with `cpu = true` and `paid = false`. Tests can create caches or other files, so run them during deployment, after the reviewed commit arrives. Ask if resource use or the intended test target is unclear.
+4. Ask whether batches or long jobs can be running. If so, agree on a read-only `idle` command that exits nonzero when busy or unable to determine state. Check it read-only. If there are no such jobs, use `true`. Propose `git push origin HEAD:refs/heads/main` as the default publish command and explain that the server needs push access to the GitHub repository. Confirm a different publication branch when appropriate.
+5. Show the proposed site, checkout, branch, base/HEAD, test, idle check and publish destination. Ask for confirmation **before writing** deployment settings. After approval, preserve other fields in a sibling candidate TOML, replace an empty inline sites array with the site table, then use `codex-flow-lite validate-config "$candidate"`. On success atomically install it at the external project config path and run `codex-flow-lite validate-config` again. Surface validation errors. The deployment engine handles SSH connection reuse automatically. Report the config path. A later deployment performs its own preflight.
