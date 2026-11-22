@@ -46,7 +46,7 @@ else
     echo "Previous installation moved to $backup"
     mkdir -p "$prefix"
   fi
-  for item in codex-flow lite defaults examples skills README.md LICENSE; do
+  for item in codex-flow lite defaults examples skills docs README.md LICENSE; do
     [ -e "$src/$item" ] && cp -R "$src/$item" "$prefix/"
   done
   find "$prefix" -name __pycache__ -prune -exec rm -rf {} +
