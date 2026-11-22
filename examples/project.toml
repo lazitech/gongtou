@@ -1,0 +1,28 @@
+# Illustrative placeholders only. Replace every path, host and command before use.
+# The reserved .invalid hosts do not identify real servers.
+base = "refs/remotes/origin/main"
+# Maximum seconds per Codex task, resume or review.
+timeout_seconds = 7200
+# Commands run locally in each completed card worktree. Replace with project tests.
+card_tests = ["/example/local-project/.venv/bin/python -m unittest"]
+review_focus = "Check correctness, data boundaries, and actionable regressions."
+# Optional local interpreter shared by card worktrees; this is not a remote path.
+interpreter = "/example/local-project/.venv/bin/python"
+
+[[sites]]
+name = "server"
+transport = "ssh"
+host = "server.example.invalid"
+ssh_config = "/example/config/ssh_config"
+repo = "/example/server/checkout"
+branch = "main"
+# Replace with the project's batch check. Exit 0 only when idle and nonzero
+# when a batch is running or its status cannot be determined.
+idle = "/example/bin/check-batch-idle"
+# Optional project backup command, run before updating the checkout.
+# pre_deploy = "/example/bin/backup-checkout"
+# Keep checks, backups and publishing CPU-only and free of paid jobs.
+tests = [{ command = "/example/server/checkout/.venv/bin/python -m unittest", cpu = true, paid = false }]
+# Set origin on the server to the project's GitHub repository.
+# After tests pass, the server pushes the tested commit to GitHub.
+publish = "git push origin HEAD:refs/heads/main"

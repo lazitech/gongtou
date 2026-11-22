@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""Parallel Codex task worktrees, commit review and ordered delivery."""
+import sys
+
+if __name__ == "__main__":
+    sys.dont_write_bytecode = True
+    from lite.cli import main
+    raise SystemExit(main())
