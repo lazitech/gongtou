@@ -42,7 +42,7 @@ wait "$second"
 codex-flow-lite status parser
 ```
 
-卡片是 Markdown，示例见 `examples/card.md`。可填写 `id` 及 `effort`。省略时采用文件名作为 ID，Sol 使用 `high`，Astra 使用 `medium`。CLI 的 `-C /path/to/checkout` 放在子命令前，卡片和反馈文件的相对路径以启动目录为准。每张卡独占一个 `codex-flow/card/<id>` 分支，worktree 在项目状态目录的 `worktrees/<id>/`。不同卡可以同时运行。同一卡的并发操作会返回占用错误。
+卡片是 Markdown，示例见 `examples/card.md`。可填写 `id` 及 `effort`。省略时采用文件名作为 ID，Sol 和 Astra 都使用 `high`。CLI 的 `-C /path/to/checkout` 放在子命令前，卡片和反馈文件的相对路径以启动目录为准。每张卡独占一个 `codex-flow/card/<id>` 分支，worktree 在项目状态目录的 `worktrees/<id>/`。不同卡可以同时运行。同一卡的并发操作会返回占用错误。
 
 worker 返回 `done` 且有可提交改动时，启动器用本机 Git 身份在卡分支提交，末行写入 `Codex-Card: <id>`。路径清单也用于自动暂存的排除。无改动时保留原提交。返回 `partial` 或 `blocked` 时保留工作文件和会话，使用 `codex-flow-lite resume parser /absolute/feedback.md` 续接。每次执行的事件、stderr 和回执在 `cards/<id>/attempt-N/`；`status <id>` 的命令和退出码来自已完成的 Codex 命令事件，`null` 表示事件未提供退出码。
 
