@@ -5,7 +5,7 @@ from pathlib import Path
 import signal
 import subprocess
 
-MODELS = {"sol": "gpt-6.1-sol", "astra": "gpt-6.2-astra", "review": "gpt-6.1-sol"}
+MODELS = {"sol": "gpt-6.1-sol", "astra": "gpt-6-astra", "review": "gpt-6.1-sol"}
 FINDING = {"type": "object", "additionalProperties": False,
            "required": ["claim", "file", "line"], "properties": {
                "claim": {"type": "string"}, "file": {"type": "string"}, "line": {"type": "integer"}}}

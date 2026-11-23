@@ -89,7 +89,7 @@ def task(project, role, card, *, base=None, resume_id=None):
         # A running or resumed card never advertises a previous pass as current.
         rec.pop("card_review", None)
         rec.update(status="running", attempts=rec["attempts"] + 1, timeout_seconds=config.get("timeout_seconds", 7200),
-                   effort=effort or rec.get("effort") or ("high" if rec["role"] == "astra" else "medium"))
+                   effort=effort or rec.get("effort") or ("medium" if rec["role"] == "astra" else "high"))
         attempt = folder / f"attempt-{rec['attempts']}"
         attempt.mkdir(parents=True, exist_ok=False)
         write_json(path, rec)
