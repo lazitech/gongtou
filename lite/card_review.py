@@ -99,7 +99,10 @@ def run(project, card, config, attempt, *, after=None, feedback=None):
     context = test_context(config)
     instructions = ("This is a single-card review. The user requires project tests. "
                     "Review the card and its interactions; do not edit tracked files. ")
-    if not expected:
+    if expected:
+        instructions += ("The launcher already ran the configured project test commands at this exact commit "
+                         "and they passed. Rerun them only when needed to confirm or rule out a finding. ")
+    else:
         instructions += ("Find applicable project tests, run them, and include each test command and exit code "
                          "in test_commands using the exact shell command observed, including wrappers when present. "
                          "Report when suitable tests could not be run. ")

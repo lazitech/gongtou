@@ -185,9 +185,14 @@ def run_review(project, config, base, candidate, folder, *, after=None, require_
                         "Inspect the full release range when useful. Put only NEW issues in findings. "
                         "Pass only if every old issue is resolved and no new issues remain.\nPrevious findings:\n"
                         + json.dumps(previous["findings"], ensure_ascii=True))
+    tests = config.get("card_tests", [])
+    test_note = ("Project test commands, run from the checkout root (use these exact commands, including their "
+                 "interpreter and environment, when you need to run tests):\n"
+                 + "".join(f"  {c}\n" for c in tests)) if tests else ""
     prompt = (instructions + "\nInspect the actual committed changes using Git. Return actionable findings "
               "with locations. Keep the checkout unchanged. No deployment, paid jobs or GPU runs.\n"
-              + focus_instructions + "\n" + context["focus"] + "\n" + catalog(project.checkout, start, candidate))
+              + focus_instructions + "\n" + context["focus"] + "\n" + test_note
+              + catalog(project.checkout, start, candidate))
     try:
         result = engine.run(project.checkout, role="review", effort=EFFORT, prompt=prompt, policy=policy,
                             output=attempt / "sol-receipt.json", timeout=config.get("timeout_seconds", 7200),

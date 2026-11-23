@@ -7,7 +7,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-from . import deploy, probe, workflow
+from . import deploy, probe, workflow, worktree
 from .project import DEFAULT_RULES, Project, oid, roots
 
 
@@ -69,6 +69,9 @@ def main(argv=None):
                     if not executable.is_absolute() or not executable.is_file() or not os.access(executable, os.X_OK):
                         raise ValueError("configured interpreter must be an absolute, executable local path")
                 result = {"valid": True, "config": str(path.resolve()), "base_oid": base}
+                shared = worktree.check_sources(project, config)
+                if shared:
+                    result["worktree_shared"] = shared
             elif args.command == "task":
                 result = workflow.task(project, args.role, args.card, base=args.base)
             elif args.command == "resume":

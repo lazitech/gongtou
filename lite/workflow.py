@@ -2,11 +2,12 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import time
 import uuid
 
 from . import deploy as delivery
-from . import card_review, engine, permissions, probe, reviews, coverage
+from . import card_review, engine, permissions, probe, reviews, coverage, worktree
 from .project import ancestor, git, lock, now, oid, read_card, require_clean, valid_id, write_json
 
 
@@ -53,6 +54,48 @@ def finish_card(wt, rec, rules):
     return oid(wt, "HEAD")
 
 
+def create_worktree(project, config, rec, key):
+    """Add the card worktree and prepare it; on failure leave no card behind.
+
+    Removing the fresh worktree, branch and card folder lets the same card be
+    dispatched again after the [worktree] settings are fixed. The setup log is
+    kept outside the card folder.
+    """
+    wt = Path(rec["worktree"])
+    wt.parent.mkdir(parents=True, exist_ok=True)
+    log = project.directory / "worktree-setup" / f"{key}-{time.strftime('%Y%m%d-%H%M%S')}.log"
+    git(project.checkout, "worktree", "add", "-b", rec["branch"], wt, rec["base"])
+    try:
+        return worktree.prepare(project, config, wt, log)
+    except Exception as exc:
+        git(project.checkout, "worktree", "remove", "--force", wt, check=False)
+        git(project.checkout, "branch", "-D", rec["branch"], check=False)
+        shutil.rmtree(project.directory / "cards" / key, ignore_errors=True)
+        kept = f"; setup log: {log}" if log.is_file() else ""
+        raise ValueError(f"card worktree setup failed and was rolled back: {exc}{kept}") from None
+
+
+def worker_prompt(config, rec, configured_python, body):
+    prompt = ("Implement this card in the current task worktree. Leave the branch and HEAD unchanged; "
+              "the launcher commits completed edits, so do not run git add, git commit or anything else that writes .git. "
+              "Follow project instructions. Do not read credentials. "
+              "Leave deployment to Claude via codex-flow-lite ship. GPU experiments and paid API jobs require separate user approval. "
+              "Do not start or stop other users' processes. Return an accurate receipt.\n")
+    if configured_python:
+        prompt += f"Shared project interpreter (reuse without modifying it): {configured_python}\n"
+    setup = rec.get("worktree_setup") or {}
+    if setup.get("linked"):
+        prompt += ("Linked from the primary checkout and shared with it (use them; do not modify, "
+                   "reinstall into or delete them): " + ", ".join(setup["linked"]) + "\n")
+    if setup.get("copied"):
+        prompt += "Copied from the primary checkout (local, untracked): " + ", ".join(setup["copied"]) + "\n"
+    tests = config.get("card_tests", [])
+    if tests:
+        prompt += ("After you report done, the launcher runs these gate commands from the worktree root. "
+                   "Run them yourself before reporting done:\n" + "".join(f"  {c}\n" for c in tests))
+    return prompt + "\n" + body
+
+
 def task(project, role, card, *, base=None, resume_id=None):
     start = time.monotonic()
     config = project.config()
@@ -80,6 +123,8 @@ def task(project, role, card, *, base=None, resume_id=None):
                 or not Path(configured_python).is_absolute() or not os.access(configured_python, os.X_OK)):
             raise ValueError("configured interpreter must be an absolute, executable local path")
         probe.ensure_probe(project.rules, project.state_root)
+        if resume_id is None:
+            rec["worktree_setup"] = create_worktree(project, config, rec, key)
         previous_review = rec.get("card_review", {})
         parent_review = rec.get("review_parent")
         if previous_review.get("review_status") == "needs_changes":
@@ -94,17 +139,8 @@ def task(project, role, card, *, base=None, resume_id=None):
         attempt.mkdir(parents=True, exist_ok=False)
         write_json(path, rec)
         try:
-            if resume_id is None:
-                wt.parent.mkdir(parents=True, exist_ok=True)
-                git(project.checkout, "worktree", "add", "-b", rec["branch"], wt, rec["base"])
             (attempt / "card.md").write_text(body, encoding="utf-8")
-            prompt = ("Implement this card in the current task worktree. Leave the branch and HEAD unchanged; "
-                      "the launcher commits completed edits. Follow project instructions. Do not read credentials. "
-                      "Leave deployment to Claude via codex-flow-lite ship. GPU experiments and paid API jobs require separate user approval. "
-                      "Do not start or stop other users' processes. Return an accurate receipt.\n")
-            if configured_python:
-                prompt += f"Shared project interpreter (reuse without modifying it): {configured_python}\n"
-            prompt += "\n" + body
+            prompt = worker_prompt(config, rec, configured_python, body)
             policy = permissions.policy_args(wt, project.rules, related_workspaces=(project.checkout, project.primary))
             before = time.monotonic()
             result = engine.run(wt, role=rec["role"], effort=rec["effort"], prompt=prompt, policy=policy,
@@ -175,7 +211,10 @@ def cleanup(project, candidate):
                     continue
                 check_checkout(wt, card["branch"], card["head"])
                 # Even ignored local caches or user files should survive a ship.
-                require_clean(wt, ignored=True)
+                # Links and copies placed by the launcher are expected.
+                require_clean(wt)
+                if worktree.unowned_ignored(wt, card):
+                    raise ValueError(f"worktree has ignored local files: {wt}")
                 git(project.checkout, "worktree", "remove", wt)
                 card["cleaned"] = now()
                 write_json(f, card)
@@ -234,7 +273,7 @@ def clean(project, ids, *, apply=False, include_ignored=False):
                     raise ValueError("worktree has assume-unchanged or skip-worktree entries")
                 if git(wt, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none", binary=True):
                     raise ValueError("worktree has tracked or untracked changes")
-                ignored = [os.fsdecode(p) for p in git(wt, "ls-files", "--others", "--ignored", "--exclude-standard", "-z", binary=True).split(b"\0") if p]
+                ignored = worktree.unowned_ignored(wt, card)
                 row = {"id": key, "worktree": str(wt), "ignored": ignored, "removed": False,
                        "eligible": not ignored or include_ignored}
                 if apply and row["eligible"]:
@@ -246,7 +285,7 @@ def clean(project, ids, *, apply=False, include_ignored=False):
                         raise ValueError("index visibility changed; preview again")
                     if git(wt, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none", binary=True):
                         raise ValueError("worktree changed; preview again")
-                    if not include_ignored and git(wt, "ls-files", "--others", "--ignored", "--exclude-standard", "-z", binary=True):
+                    if not include_ignored and worktree.unowned_ignored(wt, card):
                         raise ValueError("ignored files appeared; preview again")
                     git(checkout, "worktree", "remove", wt)
                     card["cleaned"] = now()

@@ -131,8 +131,10 @@ class Project:
 
     @staticmethod
     def validate_config(config):
-        if set(config) - {"base", "sites", "interpreter", "review_focus", "timeout_seconds", "card_tests"}:
+        if set(config) - {"base", "sites", "interpreter", "review_focus", "timeout_seconds", "card_tests", "worktree"}:
             raise ValueError("unknown project field; see examples/project.toml")
+        from . import worktree
+        worktree.validate(config)
         if not isinstance(config.get("base"), str) or not config["base"].strip():
             raise ValueError("project configuration requires a Git base ref")
         if not isinstance(config.get("sites", []), list):

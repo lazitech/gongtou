@@ -9,6 +9,15 @@ review_focus = "Check correctness, data boundaries, and actionable regressions."
 # Optional local interpreter shared by card worktrees; this is not a remote path.
 interpreter = "/example/local-project/.venv/bin/python"
 
+# Optional: untracked files each new card worktree needs. Paths are relative to
+# the primary checkout. link = shared symlinks (do not modify), copy = small
+# local files, setup = one command run in the card worktree inside the sandbox.
+# Rebuild outputs of tracked sources in setup; never link or copy them.
+[worktree]
+link = ["backend/.venv", "backend/.toolchain"]
+copy = ["frontend/config.local.json"]
+setup = "cd backend && CPLUS_INCLUDE_PATH=$PWD/.toolchain/include .venv/bin/python setup.py build_ext --inplace"
+
 [[sites]]
 name = "server"
 transport = "ssh"

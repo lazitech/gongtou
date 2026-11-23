@@ -48,6 +48,18 @@ worker 返回 `done` 且有可提交改动时，启动器用本机 Git 身份在
 
 可在外部项目 TOML 中设 `interpreter = "/absolute/shared-venv/bin/python"`，worker 指令会收到该绝对路径。新 worktree 从提交检出，项目内未跟踪的 venv 不会随卡复制。各卡可复用已有解释器和系统下载缓存。需要不同依赖的任务可单独建环境。
 
+### worktree 初始化
+
+新 worktree 只有已跟踪文件。项目 TOML 的 `[worktree]` 表声明每张新卡需要的未入库文件，路径相对主 checkout：
+
+- `link`：符号链接到主 checkout，适合 venv、工具链、头文件目录这类大而只读的环境。worker 会被告知这些路径是共享的，不得修改。
+- `copy`：复制小的本地文件。
+- `setup`：一条命令，在卡的 worktree 里、Codex 沙箱内执行，用于重新编译原生扩展等由已跟踪源码生成的产物。不要链接或复制这类产物，否则改了源码的卡会测到旧的二进制。
+
+`validate-config` 会检查每个来源存在、未被 Git 跟踪、且不匹配凭据禁读清单。链接不匹配 `.venv/` 这类仅目录的忽略规则，启动器会把它们写入 `.git/info/exclude`，避免被提交。`setup` 失败或留下未被忽略的文件时，启动器回滚这张新卡（worktree、分支和记录），日志保存在状态目录的 `worktree-setup/`，修正配置后可用同一 ID 重新派卡。setup 结束后出现的忽略文件和链接、复制的路径视为启动器所有，不会阻止卡 worktree 的自动清理。
+
+worker 指令会自动附上 `card_tests` 命令和链接路径；Sol 审查指令附上测试命令，单卡审查还会说明这些命令已在该提交通过。
+
 ```sh
 git switch -c integrate/feature "$base"
 git merge --no-edit codex-flow/card/parser
